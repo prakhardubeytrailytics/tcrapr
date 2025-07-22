@@ -460,7 +460,8 @@
 import os, json, zipfile, asyncio
 from flask import Flask, send_from_directory
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
+from playwright_stealth import stealth
+
 
 SHOP_URL = os.getenv("SHOP_URL", "https://www.tiktok.com/@thienanshop193/shop")
 OUTPUT_DIR = "scraped"
@@ -484,7 +485,7 @@ async def scrape_shop():
         )
 
         page = await context.new_page()
-        await stealth_async(page)
+        await stealth(page)
 
         print(f"⏳ Visiting: {SHOP_URL}")
         await page.goto(SHOP_URL, timeout=60000, wait_until="load")
