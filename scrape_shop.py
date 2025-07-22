@@ -457,11 +457,9 @@
 
 
 
-import os, json, zipfile, asyncio
+import os, json, zipfile, asyncio, random
 from flask import Flask, send_from_directory
 from playwright.async_api import async_playwright
-from playwright_stealth.stealth import stealth
-
 
 SHOP_URL = os.getenv("SHOP_URL", "https://www.tiktok.com/@thienanshop193/shop")
 OUTPUT_DIR = "scraped"
@@ -470,41 +468,43 @@ async def scrape_shop():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(args=[
-            "--no-sandbox",
-            "--disable-blink-features=AutomationControlled"
-        ], headless=True)
+        browser = await pw.chromium.launch(
+            headless=False,  # Headful mode
+            args=["--no-sandbox"]
+        )
+
+        # Slightly randomized viewport
+        width = random.randint(360, 400)
+        height = random.randint(640, 720)
+
         context = await browser.new_context(
-            locale="en-US",
-            user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/114.0.0.0 Safari/537.36"),
-            geolocation={"latitude": 14.0583, "longitude": 108.2772},
-            permissions=["geolocation"],
-            viewport={"width":1280,"height":800}
+            viewport={"width": width, "height": height},
+            user_agent="Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
+            is_mobile=True,
+            device_scale_factor=2,
+            has_touch=True,
+            locale="en-US"
         )
 
         page = await context.new_page()
-        await stealth(page)
 
         print(f"⏳ Visiting: {SHOP_URL}")
         await page.goto(SHOP_URL, timeout=60000, wait_until="load")
 
-        print("🔄 Scrolling to load all products...")
-        last = None
+        print("🔄 Scrolling to load all products with delay...")
+        last_height = None
         while True:
-            await page.mouse.wheel(0, 3000)
-            await asyncio.sleep(2)
-            height = await page.evaluate("() => document.body.scrollHeight")
-            if height == last:
+            await page.mouse.wheel(0, 1000)
+            await asyncio.sleep(random.uniform(1.5, 3.0))
+            height = await page.evaluate("document.body.scrollHeight")
+            if height == last_height:
                 break
-            last = height
+            last_height = height
 
         print("🔍 Extracting product data...")
         products = await page.evaluate("""
             () => Array.from(
-                new Set([...document.querySelectorAll('a[href*="/product/"]')]
-                  .map(a => a.href))
+                new Set([...document.querySelectorAll('a[href*="/product/"]')].map(a => a.href))
             ).map(link => ({ link }));
         """)
 
@@ -518,23 +518,7 @@ async def scrape_shop():
         await page.screenshot(path=os.path.join(OUTPUT_DIR, "shop_page.png"), full_page=True)
 
         with zipfile.ZipFile(os.path.join(OUTPUT_DIR, "shop_data.zip"), "w") as z:
-            for fn in ["products.json","shop_page.html","shop_page.png"]:
+            for fn in ["products.json", "shop_page.html", "shop_page.png"]:
                 z.write(os.path.join(OUTPUT_DIR, fn), fn)
 
         await browser.close()
-
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    files = ["products.json","shop_page.html","shop_page.png","shop_data.zip"]
-    links = "".join([f'<li><a href="{name}">{name}</a></li>' for name in files])
-    return f"<h2>Download links:</h2><ul>{links}</ul>"
-
-@app.route('/<path:filename>')
-def serve(filename):
-    return send_from_directory(OUTPUT_DIR, filename)
-
-if __name__ == "__main__":
-    asyncio.run(scrape_shop())
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

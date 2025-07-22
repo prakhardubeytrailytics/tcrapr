@@ -1,3 +1,2 @@
-flask
+Flask
 playwright
-playwright-stealth
