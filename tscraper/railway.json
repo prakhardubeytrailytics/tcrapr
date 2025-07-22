@@ -1,0 +1,10 @@
+{
+  "build": {
+    "env": {
+      "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright"
+    }
+  },
+  "deploy": {
+    "startCommand": "./entrypoint.sh"
+  }
+}
