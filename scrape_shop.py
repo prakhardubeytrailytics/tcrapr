@@ -469,21 +469,20 @@ async def scrape_shop():
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
-            headless=False,  # Headful mode
+            headless=True,  # Required for Railway
             args=["--no-sandbox"]
         )
 
-        # Slightly randomized viewport
-        width = random.randint(360, 400)
-        height = random.randint(640, 720)
+        # Randomize viewport for human-like behavior
+        width = random.randint(360, 420)
+        height = random.randint(720, 880)
 
+        iphone_13 = pw.devices["iPhone 13"]
         context = await browser.new_context(
+            **iphone_13,
             viewport={"width": width, "height": height},
-            user_agent="Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
-            is_mobile=True,
-            device_scale_factor=2,
-            has_touch=True,
-            locale="en-US"
+            geolocation={"latitude": 14.0583, "longitude": 108.2772},
+            permissions=["geolocation"]
         )
 
         page = await context.new_page()
@@ -491,21 +490,20 @@ async def scrape_shop():
         print(f"⏳ Visiting: {SHOP_URL}")
         await page.goto(SHOP_URL, timeout=60000, wait_until="load")
 
-        print("🔄 Scrolling to load all products with delay...")
-        last_height = None
+        print("🔄 Scrolling to load all products...")
+        last = None
         while True:
-            await page.mouse.wheel(0, 1000)
-            await asyncio.sleep(random.uniform(1.5, 3.0))
-            height = await page.evaluate("document.body.scrollHeight")
-            if height == last_height:
+            await page.mouse.wheel(0, random.randint(2000, 4000))
+            await asyncio.sleep(random.uniform(1.5, 3.5))  # Random scroll delay
+            height = await page.evaluate("() => document.body.scrollHeight")
+            if height == last:
                 break
-            last_height = height
+            last = height
 
         print("🔍 Extracting product data...")
-        products = await page.evaluate("""
-            () => Array.from(
-                new Set([...document.querySelectorAll('a[href*="/product/"]')].map(a => a.href))
-            ).map(link => ({ link }));
+        products = await page.evaluate("""() => 
+            Array.from(new Set([...document.querySelectorAll('a[href*="/product/"]')]
+              .map(a => a.href))).map(link => ({ link }))
         """)
 
         print(f"🛍️ Found {len(products)} products.")
@@ -518,7 +516,24 @@ async def scrape_shop():
         await page.screenshot(path=os.path.join(OUTPUT_DIR, "shop_page.png"), full_page=True)
 
         with zipfile.ZipFile(os.path.join(OUTPUT_DIR, "shop_data.zip"), "w") as z:
-            for fn in ["products.json", "shop_page.html", "shop_page.png"]:
+            for fn in ["products.json","shop_page.html","shop_page.png"]:
                 z.write(os.path.join(OUTPUT_DIR, fn), fn)
 
         await browser.close()
+
+# === Flask Web Server to Host Files ===
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    files = ["products.json","shop_page.html","shop_page.png","shop_data.zip"]
+    links = "".join([f'<li><a href="{name}">{name}</a></li>' for name in files])
+    return f"<h2>Download links:</h2><ul>{links}</ul>"
+
+@app.route('/<path:filename>')
+def serve(filename):
+    return send_from_directory(OUTPUT_DIR, filename)
+
+if __name__ == "__main__":
+    asyncio.run(scrape_shop())
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
