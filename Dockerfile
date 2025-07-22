@@ -15,8 +15,11 @@ RUN chmod +x entrypoint.sh
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose display env
+# Set display environment variable
 ENV DISPLAY=:99
+
+# Expose HTTP server port
+EXPOSE 8080
 
 # Entrypoint
 CMD ["./entrypoint.sh"]
