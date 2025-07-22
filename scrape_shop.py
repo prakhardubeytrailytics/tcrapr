@@ -199,45 +199,157 @@
 
 
 
+# import asyncio
+# import os
+# import threading
+# from playwright.async_api import async_playwright
+# from http.server import SimpleHTTPRequestHandler
+# import socketserver
+
+# SELLER = "CiiN"
+# SHOP_URL = f"https://www.tiktok.com/@{SELLER}/shop"
+# OUTPUT_HTML = "shop_page.html"
+
+# async def scrape_shop_data():
+#     async with async_playwright() as p:
+#         browser = await p.chromium.launch(headless=True)
+#         context = await browser.new_context(
+#             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+#         )
+#         page = await context.new_page()
+
+#         print(f"⏳ Visiting: {SHOP_URL}")
+#         await page.goto(SHOP_URL, timeout=60000, wait_until="load")
+
+#         print("⏳ Waiting for full load (including lazy-loaded products)...")
+#         await page.wait_for_timeout(15000)
+
+#         html = await page.content()
+
+#         # 💥 PRINT entire HTML content to log
+#         print("\n🧾 ====== FULL HTML CONTENT START ======\n")
+#         print(html)
+#         print("\n🧾 ====== FULL HTML CONTENT END ======\n")
+
+#         # Save to file
+#         with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
+#             f.write(html)
+#         print(f"💾 HTML saved as: {OUTPUT_HTML}")
+
+#         await browser.close()
+
+
+# def start_server():
+#     port = int(os.environ.get("PORT", 8080))
+#     os.chdir(".")
+#     handler = SimpleHTTPRequestHandler
+#     with socketserver.TCPServer(("", port), handler) as httpd:
+#         print(f"🌐 Visit: http://localhost:{port}/")
+#         print(f"📥 Download: [shop_page.html]")
+#         httpd.serve_forever()
+
+
+# if __name__ == "__main__":
+#     threading.Thread(target=start_server, daemon=True).start()
+#     asyncio.run(scrape_shop_data())
+
+
+
+
+
 import asyncio
 import os
 import threading
-from playwright.async_api import async_playwright
+import zipfile
 from http.server import SimpleHTTPRequestHandler
 import socketserver
+from playwright.async_api import async_playwright
+import json
 
-SELLER = "CiiN"
-SHOP_URL = f"https://www.tiktok.com/@{SELLER}/shop"
-OUTPUT_HTML = "shop_page.html"
+SHOP_URL = "https://shopee.vn/shop/47544025/search?page=0&sortBy=pop"
 
 async def scrape_shop_data():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+            locale="en-US",
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/114.0.0.0 Safari/537.36"
+            ),
+            geolocation={"latitude": 14.0583, "longitude": 108.2772},
+            permissions=["geolocation"]
         )
-        page = await context.new_page()
 
+        page = await context.new_page()
         print(f"⏳ Visiting: {SHOP_URL}")
         await page.goto(SHOP_URL, timeout=60000, wait_until="load")
 
-        print("⏳ Waiting for full load (including lazy-loaded products)...")
-        await page.wait_for_timeout(15000)
+        print("⏳ Waiting for product cards to load...")
+        await page.wait_for_selector('[data-e2e="product-card"]', timeout=20000)
 
-        html = await page.content()
+        # Scroll to bottom to load all products
+        await page.evaluate("""
+            () => {
+                return new Promise(resolve => {
+                    let totalHeight = 0;
+                    const distance = 500;
+                    const timer = setInterval(() => {
+                        window.scrollBy(0, distance);
+                        totalHeight += distance;
+                        if (totalHeight >= document.body.scrollHeight) {
+                            clearInterval(timer);
+                            resolve();
+                        }
+                    }, 300);
+                });
+            }
+        """)
+        await page.wait_for_timeout(2000)
 
-        # 💥 PRINT entire HTML content to log
-        print("\n🧾 ====== FULL HTML CONTENT START ======\n")
-        print(html)
-        print("\n🧾 ====== FULL HTML CONTENT END ======\n")
+        # Scrape product data
+        products = await page.evaluate("""
+            () => {
+                const items = [];
+                const cards = document.querySelectorAll('[data-e2e="product-card"]');
+                cards.forEach(card => {
+                    const title = card.querySelector('[data-e2e="product-card-name"]')?.innerText;
+                    const price = card.querySelector('[data-e2e="product-card-price"]')?.innerText;
+                    const link = card.querySelector('a')?.href;
+                    if (title && price && link) {
+                        items.push({ title, price, link });
+                    }
+                });
+                return items;
+            }
+        """)
 
-        # Save to file
-        with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
-            f.write(html)
-        print(f"💾 HTML saved as: {OUTPUT_HTML}")
+        print(f"🛍️ Found {len(products)} products.")
+        for i, p in enumerate(products[:5]):
+            print(f"{i+1}. {p['title']} - {p['price']} - {p['link']}")
+
+        # Save HTML snapshot
+        content = await page.content()
+        with open("shop_page.html", "w", encoding="utf-8") as f:
+            f.write(content)
+
+        # Save screenshot
+        await page.screenshot(path="shop_page.png", full_page=True)
+
+        # Save JSON
+        with open("products.json", "w", encoding="utf-8") as f:
+            json.dump(products, f, ensure_ascii=False, indent=2)
+
+        # Create ZIP with all
+        with zipfile.ZipFile("shop_data.zip", "w") as zipf:
+            zipf.write("products.json")
+            zipf.write("shop_page.html")
+            zipf.write("shop_page.png")
+
+        print("✅ Data saved to products.json, shop_page.html, shop_page.png, and zipped in shop_data.zip")
 
         await browser.close()
-
 
 def start_server():
     port = int(os.environ.get("PORT", 8080))
@@ -245,9 +357,12 @@ def start_server():
     handler = SimpleHTTPRequestHandler
     with socketserver.TCPServer(("", port), handler) as httpd:
         print(f"🌐 Visit: http://localhost:{port}/")
-        print(f"📥 Download: [shop_page.html]")
+        print(f"📥 Download links:")
+        print(f"   ➤ http://localhost:{port}/shop_page.html")
+        print(f"   ➤ http://localhost:{port}/products.json")
+        print(f"   ➤ http://localhost:{port}/shop_page.png")
+        print(f"   ➤ http://localhost:{port}/shop_data.zip")
         httpd.serve_forever()
-
 
 if __name__ == "__main__":
     threading.Thread(target=start_server, daemon=True).start()
