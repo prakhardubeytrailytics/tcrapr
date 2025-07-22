@@ -460,7 +460,7 @@
 import os, json, zipfile, asyncio
 from flask import Flask, send_from_directory
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth
+from playwright_stealth.stealth import stealth
 
 
 SHOP_URL = os.getenv("SHOP_URL", "https://www.tiktok.com/@thienanshop193/shop")
