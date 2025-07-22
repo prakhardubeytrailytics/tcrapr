@@ -484,7 +484,7 @@ async def scrape_shop():
         )
 
         page = await context.new_page()
-        await stealth_async(page)  # Apply stealth plugin :contentReference[oaicite:1]{index=1}
+        await stealth_async(page)
 
         print(f"⏳ Visiting: {SHOP_URL}")
         await page.goto(SHOP_URL, timeout=60000, wait_until="load")
@@ -508,10 +508,9 @@ async def scrape_shop():
         """)
 
         print(f"🛍️ Found {len(products)} products.")
-
-        # Save outputs
         with open(os.path.join(OUTPUT_DIR, "products.json"), "w", encoding="utf-8") as f:
             json.dump(products, f, ensure_ascii=False, indent=2)
+
         content = await page.content()
         with open(os.path.join(OUTPUT_DIR, "shop_page.html"), "w", encoding="utf-8") as f:
             f.write(content)
@@ -523,8 +522,8 @@ async def scrape_shop():
 
         await browser.close()
 
-# --- Flask server ---
 app = Flask(__name__)
+
 @app.route('/')
 def index():
     files = ["products.json","shop_page.html","shop_page.png","shop_data.zip"]
@@ -537,4 +536,4 @@ def serve(filename):
 
 if __name__ == "__main__":
     asyncio.run(scrape_shop())
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",8080)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
