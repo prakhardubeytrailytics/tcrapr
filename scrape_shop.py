@@ -478,12 +478,13 @@ async def scrape_shop():
         height = random.randint(720, 880)
 
         iphone_13 = pw.devices["iPhone 13"]
-        context = await browser.new_context(
-            **iphone_13,
-            viewport={"width": width, "height": height},
-            geolocation={"latitude": 14.0583, "longitude": 108.2772},
-            permissions=["geolocation"]
-        )
+        iphone_13["geolocation"] = {"latitude": 14.0583, "longitude": 108.2772}
+        iphone_13["permissions"] = ["geolocation"]
+        # Optionally override viewport in the device descriptor itself
+        iphone_13["viewport"] = {"width": width, "height": height}
+
+        context = await browser.new_context(**iphone_13)
+
 
         page = await context.new_page()
 
